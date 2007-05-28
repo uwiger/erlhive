@@ -31,8 +31,7 @@ Erlhive is still in early beta. Please join the developer mailing list via [http
 
 More will come here. Hopefully, this will evolve into an online manual on Erlhive.
 
-There is an ErlhiveUsersGuide, which is getting a bit long in the tooth. I've pasted it in from the sourceforge svn repository and added a little Wiki markup.
-
+There is an ErlhiveUserGuide, which is getting a bit long in the tooth. I've pasted it in from the sourceforge svn repository and added a little Wiki markup.
 
 
 
