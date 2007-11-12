@@ -1,0 +1,51 @@
+#summary Things to work on in Erlhive.
+
+= Introduction =
+
+There are lots of things to do with Erlhive. This page tries to list the most important ones. Please feel free to contribute.
+
+
+= TO-DO List =
+
+== Template support ==
+
+From what we can tell the Erlang [http://www.stringtemplate.org stringtemplate] engine, [http://code.google.com/p/sgte/ sgte], works in Erlhive. There are some things to address:
+
+  * Should Erlhive have a generic template API? (yaws_tei was suggested as a model)
+  * Shouldn't e.g. the blog example be ported to sgte templates?
+
+== [http://code.google.com/apis/opensocial/ OpenSocial] ==
+
+This is a set of APIs for clients and servers, aiming at making it easier 
+to collaborate on the web. At first glance, the server-side functionality
+should be really easy to support in Erlhive.
+
+== [http://www.webdav.org WebDAV] ==
+
+I've not worked with WebDAV before, but browsing through some docs,
+it seems as if Erlhive natively supports many of the things that are 
+needed for WebDAV:
+
+  * File system support
+  * Meta-data - all Erlhive object can have meta-data
+  * Access control
+
+Long-duration locks is something that needs looking into. An easy way to
+do it would be to use Erlhive's internal object properties (which can be 
+manipulated only by trusted code).
+
+== Parser and rendering libraries ==
+
+One of Erlhive's strengths is that it allows for a collection of 
+server-side reusable libraries. I'd like to see some libraries for
+parsing specialized Wiki syntax, e.g. for on-line slide shows, documents,
+code contributions, etc.
+
+Why not have modules that offer both an API for parsing Wiki text and
+expanding the result with appropriate templates?
+
+== Example applications ==
+
+First of all, the blog example should be completed. There are several
+things supported in the back-end module that cannot be accessed from
+the web interface.
