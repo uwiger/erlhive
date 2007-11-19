@@ -49,3 +49,10 @@ expanding the result with appropriate templates?
 First of all, the blog example should be completed. There are several
 things supported in the back-end module that cannot be accessed from
 the web interface.
+
+== Interactive shell ==
+
+The interactive shell seems to work, but it would be very nice to 
+be able to use it via SSL against a live system. A Flash telnet
+client (http://flashforever.homeip.net/blog/?p=13) might be just the
+thing to make this happen.
