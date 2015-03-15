@@ -1,0 +1,655 @@
+# Getting started with Erlhive #
+
+Erlhive can be used either through the included web-based admin
+pages, or from the Erlang shell. This document describes how
+to use erlhive from the shell, and how to write scripts and
+stored modules.
+
+
+## Running Erlhive ##
+
+The erlhive back-end can be run without the authenticating web server
+front-end. Using the Erlang shell, or calling Erlhive from normal
+erlang modules, the access control can be subverted relatively
+easily. Full security depends on the authenticating front-end.
+
+## Installation ##
+
+Start an Erlang node. Make sure that erlhive is in the path. Call:
+```
+  erlhive:run_this_once()
+```
+This creates a mnesia schema, starts mnesia, and creates basic
+Erlhive tables. The erlhive back-end is now installed.
+
+
+## Restarting ##
+
+Start Erlang with erlhive in the path. Call `mnesia:start()`.
+
+
+## Basic Erlhive calling convention ##
+
+There are two main functions that you have to learn, when using
+Erlhive from the erlang shell (or e.g. writing a front-end for
+erlhive):
+```
+  erlhive:admin(fun(M) -> ... end).
+  erlhive:with_user(User, fun(M) -> ... end).
+```
+The function `erlhive:admin/1` is used to create and manage user accounts.
+The function `erlhive:with_user/2` is used to access the Erlhive API
+as a given user.
+
+The variable `M` above is a module variable. It is, in fact, a
+parameterized module, and provides the context information
+necessary for Erlhive to execute the user functions safely.
+
+Stored modules and evaluated scripts execute in a given context,
+and the code cannot freely choose another identity. In this
+setting, the above functions are represented slightly differently:
+```
+  erlhive.user:admin(fun(M) -> ... end)
+  erlhive.user:do(fun(M) -> ... end)
+```
+The user name is implicit. The function `erlhive.user:admin/1`
+will only work if logged in as `<<"root">>`. More about this
+later, in the section about stored modules.
+
+
+## User administration ##
+
+To create a user, e.g. `<<"joe">>`, call:
+```
+  erlhive:admin(fun(M) -> M:create_user(<<"joe">>, []) end).
+```
+All user names are of type binary. The second argument is
+a list of options (see below). The `trusted` option should
+be used with extreme care. A `trusted` user is allowed to
+bypass some security measures in Erlhive. There is a section
+later on considerations for trusted users.
+
+The functions available through `erlhive:admin/1` are:
+
+> `M:create_user(User_name, Options) -> true`
+> > Creates a user account
+
+
+> `M:create_reader(User_name)        -> true`
+> > Creates a "reader" account. A reader account has no
+> > data storage of its own, but is allowed to call
+> > public modules. When erlhive initializes, it creates a
+> > predefined reader account called <<"guest">>.
+
+
+> `M:delete_user(User)               -> true`
+> > Deletes a user account
+
+
+> `M:list_users()                    -> [User_name]`
+> > Lists all users defined in the system
+
+
+> `M:describe_user(User_name)        -> User_Property_list`
+> > Returns a property list of meta-data for a user
+> > Several of the properties are for internal use.
+
+
+> `M:statistics(User_name)           -> Stats_Property_list`
+> > Returns some usage data for a given user
+
+
+> `M:modify_user(User_name, Options) -> true`
+> > Changes the options for a given user
+
+
+> `M:set_account_info(User, Info)           -> true`
+> > where
+```
+      Info = term()
+```
+> > > Allows for storing additional information about the user.
+> > > User\_data can be any Erlang term.
+
+
+> `M:dump_user(User_name)            -> Binary`
+> > Collects all meta-data and data for a user, and packs it
+> > as a binary object. The user can be restored, potentially
+> > on another system, using this binary.
+
+
+> `M:restore_user(User_name, Bin)    -> true`
+> > Takes a binary created by dump\_user/1 and creates the user
+> > account (User\_name does not have to be the same as the name
+> > of the 'dumped' user.) Aborts if a user User\_name already exists
+> > in the system.
+
+
+> where
+```
+    User_name     = binary()
+
+    Options       = [User_property]
+    User_property = {quota, Number_of_bytes} |
+                    {module_quota, Number_of_modules} |
+                    {trusted, boolean()} 
+
+    User_property_list = [Account_property]
+    Account_property = {name, binary()} |
+                       {created, Date_time} |
+                       {meta_table, Table_name} |
+                       {data_table, Table_name} |
+                       {quota, integer()} |
+                       {module_quota, integer()} |
+                       {trusted, boolean()}
+
+    Stats_property_list = [Stats_property]
+    Stats_property      = {data, Number_of_bytes} |
+                          {modules, Number_of_modules}
+```
+
+## User activities ##
+
+The functions available through the function
+`erlhive:with_user(fun(M) -> ... end)` are:
+
+(note that User\_name is implicit in all these calls - it is the
+authenticated identity, or the name given to `erlhive:with_user/2`)
+
+
+> `M:get_account_info()               -> Info`
+
+> Retrieves the info stored using the admin function `put_account_info/2`.
+
+
+> `M:set_variable(Var_name, Attributes) -> true`
+> > where
+```
+      Var_name       = atom() | Array_item_id | Stream_item_id
+      Array_item_id  = [Var_name]
+      Stream_item_id = [Var_name, ..., integer()]
+      Attributes     = [Class | Type | Area | Desc]
+      Class          = {class, scalar | array | stream | module}
+      Area           = public | private | trusted
+      Type           = {type, Type_expr}
+      Key_type       = {key_type, Type_expr}
+      Desc           = {desc, string()}
+      Type_expr      = string() | Type_atom
+      Type_atom      = any | string | int | binary
+```
+> > > Stores a variable declaration. A variable has to be declared before
+> > > an object can be stored. The supported classes of object are
+> > > - `scalar` (a single object),
+> > > - `array`  (an associative array),
+> > > - `stream` (a bit like a mailbox), and
+> > > - `module` (a stored module)
+
+
+> The most important attributes are:
+> - `{area, A}` public or private (or trusted). If private, the object can
+> > only be accessed by the owner. If public, other users can
+> > read the object, but not update it. Streams are the
+> > exception: public streams can be appended to, but not read.
+
+> - `{type, T}` the type of the object's value part (for streams and arrays,
+> > this implies the types of scalar objects that can be
+> > inserted into the structure.)
+
+> - `{key_type}` for arrays, the type of key to use when inserting values.
+> > Default is `any`. If this attribute is given for a stream
+> > variable, the type must be `integer`, or "int()".
+
+> More about the semantics of each in corresponding chapters.
+
+> `M:get_variable(Var_name)             -> Attributes raises Exception`
+> > Retrieves the variable declaration for `Var_name`
+
+
+> `M:delete_variable(Var_name)           -> true`
+> > Removes the variable declaration for Var\_name, along with any
+> > corresponding object.
+
+
+> `M:change_area(Var_name, Area)      -> true`
+> > A variable can be either 'public' or 'private'.
+> > This function moves Var\_name from one area to the other.
+
+
+> `M:list_variables()                    -> [Variable_name]`
+> > Lists the names of all declared variables.
+
+
+> `M:list_variables(Class)               -> [Variable_name]`
+> > Lists the names of all declared variables belonging to a given class.
+
+
+> `M:store_obj(Key, Value)              -> true`
+> > Stores a scalar object in the user's own data store.
+> > A corresponding variable (scalar or array) must have been declared first.
+> > Streams and arrays can be considered to exist as soon as they have been
+> > declared; there is no need to explicitly initialize them, before
+> > inserting the first object.
+
+
+> Key is one of the following:
+> - `Var_name`, if the object has been declared as a scalar
+> - A list when inserting the object into an array or stream
+> Streams can not be modified using `put_var/2` (you can only append to
+> a stream), and modules are stored using `M:store_module/2`.
+
+> `M:find_obj(Key)                   -> {ok, Value} | error`
+> > Tries to fetch a scalar object from the user's own data store.
+> > `Key` is either `Var_name` or a list, as described for `put_var/2`.
+
+
+> `M:get_obj(Key)                     -> Value raises Exception`
+> > Fetches a scalar object from the user's own data store. Aborts if the
+> > object cannot be found. Whole arrays and streams cannot be retrieved
+> > using this function - only scalar objects.
+> > `Key` is either `Var_name` or a list, as described for `put_var/2`.
+
+
+> `M:find_pub(User_name, Key) ->      -> {ok, Value} | error`
+> > Tries to fetch the value of a public object belonging to another
+> > user. `User_name` is a binary object.
+
+
+> `M:next_obj(Key)                     -> New_key | '$end_of_table'`
+> > Fetches the key of the next object in the current array or stream.
+> > Returns `'$end_of_table'` if there is no next object. Aborts if
+> > `Key` is not an array or stream element.
+
+
+> `M:prev_obj(Key)                     -> New_key | '$end_of_table'`
+> > Fetches the key of the previous object in the current array or stream.
+> > Returns '$end\_of\_table' if there is no next object. Aborts if
+> > Key is not an array or stream element.
+
+
+> `M:get_obj_and_props(Key)    -> {Value, Props} raises Exception`
+> > All data objects can be annotated with properties (c.f. a read/unread
+> > flag in a mailbox entry). This function retrieves the content of the
+> > data object together with the associated list of properties.
+
+
+> `M:list_elements(Array_or_stream)        -> [Index_value]`
+> > Returns a list of index values for an array or a stream.
+> > In a stream, the index values are always (an ordered list of) integers.
+> > In an array, the index values can be any Erlang term.
+
+
+> `M:delete_obj(Key)                   -> true`
+> > Removes a data object from the user's own data store.
+> > If the object is of type array or stream, the whole structure
+> > is removed  (BUG? is it really?)
+> > Modules cannot be removed with this function. Use erase\_module/1
+> > instead.
+> > Key is either Var\_name or a list, as described for put\_var/2.
+
+
+> `M:table(QLC_options)               -> Handle`
+> > Returns a QLC handle for searching the user's own data store.
+> > All objects in the data store appear to QLC as an ordered set
+> > of {Key, Value} tuples. For arrays and streams, Key is a 2-tuple,
+> > {Var\_name, Index}. This handle can be used in qlc:eval(Handle).
+> > See the QLC documentation for details.
+
+
+> `M:set_property(Key, Prop, Value) -> true raises Exception`
+> > All data objects can be annotated with properties (c.f. a read/unread
+> > flag in a mailbox entry). This function stores such a property
+> > for a given data object.
+
+
+> `M:set_properties(Key, Prop_list)  -> true raises Exception`
+> > Same as above, but stores a list of {Key, Value} properties at once.
+
+
+> `M:find_property(Key, Prop)      -> {ok, Prop_value} | error`
+> > Tries to fetch a property associated with a data object.
+
+
+> `M:get_properties(Key)             -> Prop_list raises Exception`
+> > Fetches all user-defined properties from the given data object.
+> > Aborts if the object does not exist.
+
+
+> `M:get_auto_properties(Key)        -> Auto_prop_list raises Exception`
+> > Erlhive stores some automatically generated properties.
+> > ({from, User\_name}, {location, DataStore}). This function retrieves
+> > them. Aborts under the same circumstances as get\_props/1.
+
+
+> `M:delete_property(Key, Prop)      -> true raises Exception`
+> > Erases a given property associated with a data object.
+> > Aborts if the property doesn't exist or if the object doesn't
+> > exist.
+
+
+> `M:delete_properties(Key)           -> true raises Exception`
+> > Erases all user-defined properties associated with a data object.
+
+
+
+> `M:store_module(Module_name, Code)   -> {ok, Warnings, [FQN]} |`
+> > `{error,Errors,[]}`
+> > where
+```
+      Module_name = atom()
+      Code        = string()
+      FQN         = atom()    % the fully qualified module name
+```
+> > > Stores a module in the current user's module storage.
+> > > The module undergoes a transformation, before being passed
+> > > to the Erlang compiler. Side-effects, such as send & receive, or
+> > > calls to modules/functions that are not known to be side-effect free,
+> > > are disallowed. (**UPDATE** The manual is wrong here. Side-effects are
+> > > now allowed)
+
+
+> The module name must first be declared as a variable. A module can be
+> either public or private. Other users can call public modules.
+> Private modules are invisible to everyone
+> except the owner. Module variables do not have a type declaration.
+
+> Erlhive uses "dotted notation" for calling modules owned by other
+> users. For example, erlhive.ulf.wiki\_parser would address the module
+> wiki\_parser owned by the user <<"ulf">>. When storing the module,
+> the module attribute can either contain the short name
+> (e.g. wiki\_parser), or the fully qualified name
+> (erlhive.ulf.wiki\_parser). The erlhive code checker will insert the
+> fully qualified name if needed. One point of writing the short name
+> in the module attribute would be to make the module easier to copy
+> into another account.
+
+> It is possible to call some "normal" erlang modules. In order not to
+> be interpreted as modules belonging to the same "package" (user account),
+> regular module names must be preceded with a dot, e.g. '.lists'.
+
+> `M:delete_module(Module_name) -> boolean()`
+> > Erases the module Module\_name. Returns 'true' if the module existed,
+> > and false otherwise. An exception is raised if Module\_name has not been
+> > been declared, or has been declared as something other than a module.
+
+
+> `M:get_module_src(Module_name) -> Binary raises exception`
+> > Fetches the source code for Module\_name. Note that only the owner
+> > of the module is able to read the source code. If the owner wishes to
+> > make the source code visible to others, he/she can export a
+> > public function that fetches and returns the source (stored modules
+> > have the same access privileges as the owner).
+> > The source code is delivered as a binary object. The contents are the
+> > source code exactly as entered in the call to store\_module/2.
+
+
+> `M:find_pub_src(User_name, Module_name) -> {ok, binary()} | error`
+> > Tries to fetch the source code for another user's public module.
+
+
+> `M:get_module_iteration(Module_name) -> integer()`
+> > Fetches the value a counter that is incremented each time a stored
+> > module is updated. This is a minimal way of detecting whether a
+> > module you are using has changed since you last checked it.
+
+
+> `M:table(QLC_options) -> QLC_handle`
+> > Returns a QLC table handle to the user's own data storage.
+> > Data is represented as an ordered set of {Key, Value} tuples.
+> > See the manual for QLC for details. It may also be worthwhile to
+> > look at the documentation for mnesia:table/[1,2].
+
+
+> `M:eval(String) -> Result`
+> > Evaluates an Erlang expression. The expression is parsed and
+> > rewritten with the same restrictions as for stored modules.
+> > The expression will be evaluated with the same access privileges
+> > as the calling user.
+
+
+> `M:apply(M, F, A) -> Result`
+> > Equivalent to erlang:apply/3, but only modules allowed to be called
+> > from within a stored module are accepted. The call will be executed
+> > with the same access privileges as the calling user.
+
+
+> `M:trace_pattern(MFA, MatchSpec, FlagList) -> ...`
+> > Equivalent to erlang:trace\_pattern/3, but only modules that are
+> > directly callable for the user can be traced.
+
+
+> The FlagList options 'meta' and {meta, Pid} are not allowed for
+> security reasons.
+
+> `M:run_trace(How, FlagList) -> TracerPid`
+> > Simlilar to erlang:trace/2.
+> > Starts a process which collects trace data and optionally returns it when
+> > stop\_trace/1 is called. Tracing is conducted with an upper limit
+> > on time and number of trace messages.
+
+
+> Allowed flags are `[arity, call, return_to, silent, timestamp]`.
+
+> `M:stop_trace(Fetch) -> ok | Trace_messages`
+> > where
+```
+       Fetch = boolean()
+```
+> > > Stops the trace and returns the trace messages if Fetch == true.
+
+
+> M:profile(Fun) -> {Result, Profiling\_trace}
+> > Runs a profiling trace on the provided Fun. The Fun must be of
+> > arity == 1, and will be called with a module parameter, just like
+> > erlhive:with\_user/1. The profiling trace will consist of
+> > {trace, Pid, call, Module, Function, Arity} and
+> > {trace, Pid, return\_to, Module, Function, Arity} for modules that
+> > are directly callable by the current user.
+
+
+### Stored modules ###
+
+It is possible to store erlang modules in erlhive. The modules are compiled,
+and stored if they compile successfully - otherwise the operation is aborted.
+
+In order to achieve a safe environment, certain constructs are forbidden:
+
+  * spawning processes, sending messages, receiving messages
+  * calling modules not known to be safe
+
+Erlhive uses epp\_dodger to parse the source code. This means that macros
+that are not in themselves syntactically correct are not allowed.
+
+Erlhive works pretty hard at detecting all attempts to subvert the
+security mechanisms. Function calls that cannot be resolved at compile-time
+are resolved dynamically. This will generate more overhead than function
+calls that can be resolved at compile-time. Modules are dynamically loaded
+from the erlhive database.
+
+
+### Include files ###
+
+It is possible to use include files, but these files must be stored in
+erlhive as scalar objects. It is possible to include .hrl files from another
+user's public area if that user has stored the contents of the .hrl file
+as a public scalar object.
+
+Example: Say we have stored an include file "m.hrl" in our own storage.
+The key for the object is expected to be <<"m.hrl">> (note: key is a binary),
+and the contents of the object shall be a string.
+
+Our include directive would then look like this:
+```
+-include("m.hrl").
+```
+Assume our user name is `<<"ulf">>`. We could also write like this:
+```
+-include("erlhive/ulf/m.hrl").
+```
+(We use slashes instead of dots here because this would work even if
+compiling the module outside of erlhive.)
+
+If another user, e.g. <<"joe">>, has stored an include file <<"j.hrl">> in
+his public area, we can include it thus:
+```
+-include("erlhive/joe/j.hrl").
+```
+
+### Parse transforms ###
+
+Parse transforms are allowed, subject to the same calling conventions
+as other modules. That is, the 'qlc' module is a standard module that
+can be called from within erlhive, and it contains a parse\_transform
+function. Other parse transforms can be stored as erlhive modules,
+and are then called just like any other erlhive modules.
+
+(The module qlc is still a bit special, since the qlc parse transform
+is always executed. This is because a qlc user normally includes the
+file qlc.hrl. In erlhive this is neither allowed, nor necessary.
+If a user somehow wishes to control the order in which the qlc
+parse transform is called, relative to other parse transforms,
+this can be achieved by inserting a -compile({parse\_transform,qlc})
+directive at the appropriate place in the source code. Erlhive will
+honour the order of the parse transform directives.
+
+
+
+### Special functions callable from within stored modules ###
+
+(These functions are also available when calling the M:eval/1 function.)
+
+When executing in the context of a stored module, the user identity is
+implicit. In order to call the erlhive user API, the following function
+is used
+
+
+> erlhive.user:do(fun(M) -> ... end)
+
+It works like erlhive:with\_user(User, fun(M) -> ... end)
+
+It is also possible to run a profiling trace, by calling
+
+> erlhive.user:profile(fun(M) -> ... end)
+
+When calling the above functions, the module variable M is initialized
+with the privileges of the owner of the current module. It can sometimes
+be desirable to dispatch a call as someone else, i.e. not letting the
+caller inherit the rights of the module owner. This can be achieved by
+
+> erlhive.user:as\_guest(fun(M) -> ... end)
+
+This creates a sub-transaction where the caller assumes the identity
+of <<"guest">> (a predefined reader account). What this means is that
+it will be possible to call public modules and read public data, but
+nothing else - except, as usual, when going through someone's public
+module.
+
+(The first attempt at solving this problem was to let the function assume
+the caller's identity, but this would also enable the function to read
+modify and delete the caller's own data, which would create a much too
+tempting opportunity to write malicious code.)
+
+It is possible to determine the identity of the caller, as well as the
+name of the module making the call:
+
+> erlhive.user:caller() -> User\_name
+> erlhive.user:from\_module() -> Module\_name
+
+It is also possible to derive the name of the module owner:
+
+> erlhive.user:owner() -> User\_name
+
+
+
+## Trusted users ##
+
+If a user has the account option {trusted, true}, it can store modules
+in a 'trusted' area. These modules are effectively private, but are
+also allowed to call any module as well as perform the usual side-effects.
+Calls to erlhive modules are transformed so that they will work like
+they usually do. BUG! Some dynamically resolved calls will possibly
+fail, even if the user is trusted, since this check is not always
+performed.
+
+Great care must be taken with trusted modules. They can subvert all
+security measures in erlhive, to the point of destroying the erlhive
+database or terminating the entire application. Only users that can
+really be - as it were - trusted, should be given this authority.
+
+A word of caution also about side-effects. All erlhive code runs inside
+mnesia transactions. Mnesia employs a deadlock prevention algorithm that
+selectively restarts transactions in order to resolve potential deadlock.
+This means that side-effects performed in this context can be performed
+several times.
+
+
+
+## List of functions allowed to be called from erlhive modules ##
+
+The following list comprises the output from the function
+erlhive\_filter:patterns(). It shows what modules are allowed by the
+erlhive code checker. The format of of the tuples is {Module, Function, Arity},
+where '_' is used as a wildcard. (This is the format used for setting trace
+patterns - se erlang:trace\_pattern/3.) For example, {dict,'_','_'} means that
+any exported function in the 'dict' module can be called._
+
+Other functions may be added to the list in the future, as they are
+determined to be safe.
+
+```
+[{calendar,'_','_'},
+ {dict,'_','_'},
+ {'erl.lang',throw,1},
+ {'erl.lang.atom',to_string,1},
+ {'erl.lang.binary',from_list,1},
+ {'erl.lang.binary',from_term,1},
+ {'erl.lang.binary',from_term,2},
+ {'erl.lang.binary',split,2},
+ {'erl.lang.binary',to_list,1},
+ {'erl.lang.binary',to_term,1},
+ {'erl.lang.integer',from_string,1},
+ {'erl.lang.integer',to_string,1},
+ {'erl.lang.number',round,1},
+ {'erl.lang.proc',self,0},
+ {'erl.lang.ref',new,0},
+ {'erl.lang.term',size,1},
+ {'erl.lang.tuple',element,2},
+ {'erl.lang.tuple',setelement,3},
+ {'erl.system',now,0},
+ {'erl.util.date',local,0},
+ {'erl.util.date',local_to_utc,1},
+ {'erl.util.date',local_to_utc,2},
+ {'erl.util.date',time_of_day,0},
+ {'erl.util.date',utc,0},
+ {erlang,atom_to_list,1},
+ {erlang,binary_to_list,1},
+ {erlang,binary_to_term,1},
+ {erlang,element,2},
+ {erlang,integer_to_list,1},
+ {erlang,list_to_binary,1},
+ {erlang,list_to_integer,1},
+ {erlang,localtime,0},
+ {erlang,localtime_to_universaltime,1},
+ {erlang,localtime_to_universaltime,2},
+ {erlang,make_ref,0},
+ {erlang,now,0},
+ {erlang,round,1},
+ {erlang,self,0},
+ {erlang,setelement,3},
+ {erlang,size,1},
+ {erlang,split_binary,2},
+ {erlang,term_to_binary,1},
+ {erlang,term_to_binary,2},
+ {erlang,throw,1},
+ {erlang,time,0},
+ {erlang,universaltime,0},
+ {erlhive_qlc,'_','_'},
+ {gb_trees,'_','_'},
+ {lists,'_','_'},
+ {orddict,'_','_'},
+ {ordsets,'_','_'},
+ {sets,'_','_'}]
+```
+
+
+
+

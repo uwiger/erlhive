@@ -1,0 +1,34 @@
+# Introduction #
+
+Erlhive is a multi-user web services framework,
+with some rather unusual features:
+
+Each user account is equipped with:
+
+  * A private name space
+  * A public and a private store in a real-time database
+  * Public and private code modules
+  * A transaction-based file system
+
+The programming environment in Erlhive is Erlang-based,
+and the real-time database is Mnesia. All code modules
+stored in Erlhive are "safe-compiled", ensuring that
+application code cannot perform tasks that would
+violate the integrity of other applications and data.
+
+People familiar with Mnesia will be surprised at how
+much one can do safely in an Erlhive transaction:
+You can create ETS tables and processes, and send
+messages to your own processes. Modules like `file`,
+`gen_server` and even `gen_tcp` can be used safely,
+thanks to the "safe-compilation" process.
+
+Erlhive is still in early beta. Please join the developer mailing list via [the Erlhive Project page](http://erlhive.sourceforge.net/)
+
+# Details #
+
+More will come here. Hopefully, this will evolve into an online manual on Erlhive.
+
+There is an ErlhiveUserGuide, which is getting a bit long in the tooth. I've pasted it in from the sourceforge svn repository and added a little Wiki markup.
+
+
